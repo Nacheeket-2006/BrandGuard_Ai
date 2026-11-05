@@ -1,0 +1,8 @@
+{
+  "title": "Regional campaign terminology",
+  "category": "Terminology",
+  "citation": "Section 8.1: Regional Campaigns",
+  "content": "Campaigns must say helpful instead of awesome. Use clear, specific language.",
+  "active": true,
+  "rules": [{"pattern":"awesome","replacement":"helpful","severity":"low","explanation":"Regional campaigns use grounded language rather than vague praise."}]
+}

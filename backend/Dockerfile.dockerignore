@@ -1,0 +1,14 @@
+**/node_modules
+**/.venv
+**/dist
+**/.git
+**/.env
+**/.openai
+**/__pycache__
+**/.pytest_cache
+**/tmp
+**/output
+**/*.db
+**/*.db-*
+**/*.zip
+**/*.tsbuildinfo

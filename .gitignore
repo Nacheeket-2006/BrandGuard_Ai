@@ -1,0 +1,28 @@
+# Local secrets; commit only example configuration.
+.env
+.env.*
+!.env.example
+
+# Installed dependencies, builds, and caches.
+**/node_modules/
+**/.venv/
+**/dist/
+**/__pycache__/
+**/.pytest_cache/
+**/coverage/
+**/htmlcov/
+*.pyc
+*.tsbuildinfo
+.coverage
+
+# Runtime databases, exports, temporary files, and preserved Git history.
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.zip
+backend/tmp/
+backend/output/
+
+# Local hosting identity and tooling state.
+**/.openai/

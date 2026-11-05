@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+.openai/local-state.json
+.openai/*credential*
+public/brandguard-ai-source.zip
+coverage/
+.env.*
+!.env.example
