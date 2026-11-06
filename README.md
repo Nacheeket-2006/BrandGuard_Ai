@@ -395,6 +395,14 @@ Prepare `backend/.env` first. **Docker/Compose execution has not been verified i
 
 The frontend can also be hosted separately, with an API proxy and authentication/origin configuration adapted accordingly. A static frontend alone provides the browser demonstration, not the complete Python backend.
 
+### Vercel services
+
+The root [`vercel.json`](vercel.json) defines a `backend` FastAPI service rooted at `backend/` (`main:app`) and a `frontend` Vite service rooted at `frontend/`. Requests under `/api/` are routed to the backend; all other paths are routed to the frontend. The browser uses same-origin `/api/v1/...` requests, so no service binding is needed: the frontend does not call the backend from a function, and its Vite localhost proxy is only for local development. `backend/shared/guidelines.json` is a bundled seed fallback when Vercel builds the backend without sibling frontend files.
+
+Configure the backend service's Vercel environment with a persistent PostgreSQL `DATABASE_URL` (SQLite on a serverless filesystem is not persistent), `DEMO_MODE=false`, a stable `SESSION_SECRET` of at least 32 characters, and `BRANDGUARD_USERS` containing the bootstrap manager/admin accounts. Set `ALLOWED_ORIGINS` to the exact deployed origin, including `https://`; update it for each production or preview origin that should be allowed. Add `OPENAI_API_KEY` and set `AI_MODE=live` only when live AI is wanted. Keep credentials in Vercel's environment-variable settings, not in source.
+
+The deployment still requires configuration and a hosted smoke test before it is production-ready; Vercel deployment is not verified by the local test/build checks.
+
 ## GitHub handoff
 
 Create a clean full-project source archive:

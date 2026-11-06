@@ -24,9 +24,16 @@ from sqlalchemy.orm import DeclarativeBase, Session
 from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
-from .engine import analyze, chunks_for, embed_guideline, py_index, score, uid, utf16
+if __package__:
+    from .engine import analyze, chunks_for, embed_guideline, py_index, score, uid, utf16
+else:
+    from engine import analyze, chunks_for, embed_guideline, py_index, score, uid, utf16
 
-ROOT = Path(__file__).resolve().parent.parent
+BACKEND_DIR = Path(__file__).resolve().parent
+ROOT = BACKEND_DIR.parent if (BACKEND_DIR.parent / 'frontend').is_dir() else BACKEND_DIR
+GUIDELINES_FILE = ROOT / 'frontend/shared/guidelines.json'
+if not GUIDELINES_FILE.is_file():
+    GUIDELINES_FILE = BACKEND_DIR / 'shared/guidelines.json'
 DEMO = os.getenv('DEMO_MODE', 'true').lower() == 'true'
 SECRET = os.getenv('SESSION_SECRET') or secrets.token_hex(32)
 ORIGINS = os.getenv('ALLOWED_ORIGINS', 'http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:8000').split(',')
@@ -53,7 +60,7 @@ async def lifespan(app):
     Base.metadata.create_all(engine)
     with Session(engine) as db:
         if not db.get(Record, 'settings:initialized'):
-            for g in json.loads((ROOT / 'frontend/shared/guidelines.json').read_text(encoding='utf-8')):
+            for g in json.loads(GUIDELINES_FILE.read_text(encoding='utf-8')):
                 g = await embed_guideline(g)
                 db.add(Record(id=g['id'], kind='guideline', body=json.dumps(g)))
             db.add(Record(id='settings:initialized', kind='setting', body='{}'))

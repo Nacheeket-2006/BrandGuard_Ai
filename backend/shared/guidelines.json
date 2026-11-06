@@ -1,0 +1,119 @@
+[
+  {
+    "id": "tone",
+    "title": "Tone of voice",
+    "category": "Tone & messaging",
+    "citation": "Section 1.1: Tone of Voice",
+    "content": "Be confident, clear, and helpful. Avoid hype, pressure, and exaggerated superlatives. Do not use revolutionary, game-changing, or crush the competition.",
+    "active": true,
+    "rules": [
+      {
+        "pattern": "revolutionary",
+        "replacement": "thoughtfully designed",
+        "severity": "medium",
+        "explanation": "Lead with tangible value rather than an exaggerated superlative."
+      },
+      {
+        "pattern": "game-changing",
+        "replacement": "practical",
+        "severity": "medium",
+        "explanation": "Our voice is useful and grounded, not sensational."
+      },
+      {
+        "pattern": "crush the competition",
+        "replacement": "move your team forward",
+        "severity": "medium",
+        "explanation": "Use supportive, customer-focused language instead of aggressive comparisons."
+      }
+    ]
+  },
+  {
+    "id": "claims",
+    "title": "Pricing & approved claims",
+    "category": "Facts & claims",
+    "citation": "Section 3.2: Pricing & Claims",
+    "content": "The Pro plan starts at $49/month. The approved service uptime is 99.9%. Never promise guaranteed results, 100% accuracy, or call the product the world's best. Pricing and uptime claims must match these approved facts.",
+    "active": true,
+    "rules": [
+      {
+        "pattern": "\\$[0-9]+(?:\\.[0-9]+)?/month",
+        "replacement": "$49/month",
+        "allowed": "$49/month",
+        "severity": "high",
+        "explanation": "The approved Pro plan price is $49/month. This price does not match the current source of truth."
+      },
+      {
+        "pattern": "[0-9]+(?:\\.[0-9]+)?% uptime",
+        "replacement": "99.9% uptime",
+        "allowed": "99.9% uptime",
+        "severity": "high",
+        "explanation": "The approved service uptime is 99.9%. Avoid an unsupported service guarantee."
+      },
+      {
+        "pattern": "guaranteed results",
+        "replacement": "designed to support better outcomes",
+        "severity": "high",
+        "explanation": "We cannot guarantee outcomes. State the intended benefit without promising a result."
+      },
+      {
+        "pattern": "100% accuracy",
+        "replacement": "AI-assisted review with human oversight",
+        "severity": "high",
+        "explanation": "Perfect accuracy is not an approved or substantiated claim."
+      },
+      {
+        "pattern": "world's best",
+        "replacement": "purpose-built",
+        "severity": "high",
+        "explanation": "This superiority claim has no approved supporting evidence."
+      }
+    ]
+  },
+  {
+    "id": "terms",
+    "title": "Approved terminology",
+    "category": "Terminology",
+    "citation": "Section 2.4: Product Terminology",
+    "content": "Use customers instead of users. Use BrandGuard AI, never BrandGuard Bot. Avoid the term cheap; use accessible. Always write the product name as BrandGuard AI.",
+    "active": true,
+    "rules": [
+      {
+        "pattern": "\\busers\\b",
+        "replacement": "customers",
+        "severity": "low",
+        "explanation": "Refer to the people we serve as customers, in line with our relationship-led language."
+      },
+      {
+        "pattern": "BrandGuard Bot",
+        "replacement": "BrandGuard AI",
+        "severity": "medium",
+        "explanation": "Use the approved product name consistently across every channel."
+      },
+      {
+        "pattern": "\\bcheap\\b",
+        "replacement": "accessible",
+        "severity": "low",
+        "explanation": "Emphasize accessibility without implying low quality."
+      }
+    ]
+  },
+  {
+    "id": "visual",
+    "title": "Visual identity",
+    "category": "Visual identity",
+    "citation": "Section 4.1: Color & Logo",
+    "content": "Approved brand colors are #8B5CF6 (violet), #22D3EE (cyan), #FFFFFF (white), and #0C0D14 (ink). The logo must be placed top-left or bottom-right. Preserve clear space; never stretch or recolor the logo.",
+    "active": true,
+    "colors": [
+      "#8B5CF6",
+      "#22D3EE",
+      "#FFFFFF",
+      "#0C0D14"
+    ],
+    "logoPositions": [
+      "top-left",
+      "bottom-right"
+    ],
+    "rules": []
+  }
+]
