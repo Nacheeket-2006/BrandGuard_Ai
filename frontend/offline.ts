@@ -1,5 +1,5 @@
 import seed from './shared/guidelines.json';
-import type { Action, Draft, Guideline, Issue, Review, Role } from './types';
+import type { Action, Draft, GovernanceInsights, Guideline, Issue, Review, Role } from './types';
 const id = () => crypto.randomUUID();
 const key = 'brandguard-demo-v1';
 interface Store {
@@ -9,7 +9,18 @@ interface Store {
 function load(): Store {
   try {
     const raw = localStorage.getItem(key);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const store = JSON.parse(raw) as Store;
+      const seeded = structuredClone(seed) as Guideline[];
+      for (const guideline of seeded)
+        if (!store.guidelines.some((existing) => existing.id === guideline.id))
+          store.guidelines.push(guideline);
+      const visual = store.guidelines.find((guideline) => guideline.id === 'visual');
+      const visualSeed = seeded.find((guideline) => guideline.id === 'visual');
+      if (visual && visual.minContrastRatio === undefined && visualSeed?.minContrastRatio)
+        visual.minContrastRatio = visualSeed.minContrastRatio;
+      return store;
+    }
   } catch {
     throw new Error('Browser storage is unavailable. Enable local storage or start the backend.');
   }
@@ -23,6 +34,19 @@ function save(s: Store) {
   }
 }
 const policy = (gs: Guideline[]) => JSON.stringify(gs);
+function relativeLuminance(color: string) {
+  const channels = [1, 3, 5].map((index) => parseInt(color.slice(index, index + 2), 16) / 255);
+  const linear = channels.map((value) =>
+    value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4,
+  );
+  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+}
+function contrastRatio(first: string, second: string) {
+  const [lighter, darker] = [relativeLuminance(first), relativeLuminance(second)].sort(
+    (a, b) => b - a,
+  );
+  return (lighter + 0.05) / (darker + 0.05);
+}
 export const alignment = (issues: Issue[]) =>
   Math.max(
     0,
@@ -103,6 +127,45 @@ export function analyzeLocal(draft: Draft, gs: Guideline[]): Issue[] {
         status: 'open',
       });
   }
+  const accessibility = gs.find((g) => g.active && g.id === 'accessibility');
+  if (accessibility) {
+    const suppliedColors = [
+      ...draft.visual.colors,
+      ...Array.from(draft.text.matchAll(/#[0-9a-f]{6}\b/gi), (match) => match[0]),
+    ];
+    const colors = [
+      ...new Set(
+        suppliedColors
+          .filter((color) => /^#[0-9a-f]{6}$/i.test(color))
+          .map((color) => color.toUpperCase()),
+      ),
+    ];
+    if (colors.length >= 2) {
+      let highest = { ratio: 0, first: '', second: '' };
+      for (let first = 0; first < colors.length; first++)
+        for (let second = first + 1; second < colors.length; second++) {
+          const ratio = contrastRatio(colors[first], colors[second]);
+          if (ratio > highest.ratio)
+            highest = { ratio, first: colors[first], second: colors[second] };
+        }
+      const minimum = gs.find((g) => g.id === 'visual')?.minContrastRatio ?? 4.5;
+      if (highest.ratio < minimum)
+        issues.push({
+          id: id(),
+          startIndex: 0,
+          endIndex: 0,
+          flaggedText: `${highest.first} and ${highest.second}`,
+          ruleCategory: 'Accessibility',
+          ruleCitation: accessibility.citation,
+          explanation: `The highest contrast pair is ${highest.ratio.toFixed(2)}:1 < ${minimum}:1 WCAG AA. Pair colors with #FFFFFF or #0C0D14 from the approved palette to improve legibility.`,
+          suggestedRewrite:
+            'Pair with #FFFFFF or #0C0D14 from the approved palette, then re-audit.',
+          severity: 'medium',
+          target: 'visual',
+          status: 'open',
+        });
+    }
+  }
   let end = -1;
   return issues
     .sort((a, b) => a.startIndex - b.startIndex)
@@ -113,9 +176,104 @@ export function analyzeLocal(draft: Draft, gs: Guideline[]): Issue[] {
       return true;
     });
 }
+export function aggregateInsights(reviews: Review[]): GovernanceInsights {
+  const violations = new Map<string, GovernanceInsights['topViolations'][number]>();
+  const guidelines = new Map<string, GovernanceInsights['unclearGuidelines'][number]>();
+  const channels = new Map<
+    string,
+    GovernanceInsights['channelBreakdown'][number] & { scoreTotal: number }
+  >();
+  for (const review of reviews) {
+    const channel = review.channel || 'Unknown';
+    const channelData = channels.get(channel) || {
+      channel,
+      reviewCount: 0,
+      averageScore: 0,
+      scoreTotal: 0,
+    };
+    channelData.reviewCount++;
+    channelData.scoreTotal += review.score;
+    channels.set(channel, channelData);
+    for (const issue of review.issues) {
+      const violationKey = JSON.stringify([
+        issue.ruleCitation,
+        issue.ruleCategory,
+        issue.flaggedText,
+      ]);
+      const violation = violations.get(violationKey) || {
+        ruleCitation: issue.ruleCitation,
+        ruleCategory: issue.ruleCategory,
+        flaggedText: issue.flaggedText,
+        count: 0,
+        acceptedCount: 0,
+        rejectedCount: 0,
+        openCount: 0,
+      };
+      violation.count++;
+      if (issue.status === 'accepted') violation.acceptedCount++;
+      if (issue.status === 'rejected') violation.rejectedCount++;
+      if (issue.status === 'open') violation.openCount++;
+      violations.set(violationKey, violation);
+      const guidelineKey = JSON.stringify([issue.ruleCitation, issue.ruleCategory]);
+      const guideline = guidelines.get(guidelineKey) || {
+        ruleCitation: issue.ruleCitation,
+        ruleCategory: issue.ruleCategory,
+        totalCount: 0,
+        acceptedCount: 0,
+        rejectedCount: 0,
+        rejectionRate: 0,
+      };
+      guideline.totalCount++;
+      if (issue.status === 'accepted') guideline.acceptedCount++;
+      if (issue.status === 'rejected') guideline.rejectedCount++;
+      guidelines.set(guidelineKey, guideline);
+    }
+  }
+  const channelBreakdown = [...channels.values()]
+    .map(({ scoreTotal, ...channel }) => ({
+      ...channel,
+      averageScore: Number((scoreTotal / channel.reviewCount).toFixed(2)),
+    }))
+    .sort((a, b) => a.channel.localeCompare(b.channel));
+  const unclearGuidelines = [...guidelines.values()]
+    .filter((guideline) => guideline.rejectedCount > 0)
+    .map((guideline) => ({
+      ...guideline,
+      rejectionRate: guideline.rejectedCount / guideline.totalCount,
+    }))
+    .sort(
+      (a, b) =>
+        b.rejectionRate - a.rejectionRate ||
+        b.totalCount - a.totalCount ||
+        a.ruleCitation.localeCompare(b.ruleCitation),
+    )
+    .slice(0, 5);
+  return {
+    totalReviews: reviews.length,
+    approvedCount: reviews.filter((review) => review.status === 'approved').length,
+    returnedCount: reviews.filter((review) => review.status === 'returned').length,
+    averageScore: reviews.length
+      ? Number(
+          (reviews.reduce((total, review) => total + review.score, 0) / reviews.length).toFixed(2),
+        )
+      : 0,
+    topViolations: [...violations.values()]
+      .sort(
+        (a, b) =>
+          b.count - a.count ||
+          a.ruleCitation.localeCompare(b.ruleCitation) ||
+          a.ruleCategory.localeCompare(b.ruleCategory) ||
+          a.flaggedText.localeCompare(b.flaggedText),
+      )
+      .slice(0, 10),
+    unclearGuidelines,
+    channelBreakdown,
+  };
+}
 export const offline = {
   guidelines: async () => load().guidelines,
   reviews: async () => load().reviews.sort((a, b) => b.createdAt - a.createdAt),
+  insights: async () => aggregateInsights(load().reviews),
   guideline: async (g: Guideline) => {
     const s = load();
     s.guidelines.push(g);

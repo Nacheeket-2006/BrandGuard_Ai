@@ -39,7 +39,17 @@ import {
 import { diffWords } from 'diff';
 import { api, setRole as setApiRole } from './api';
 import sample from './shared/sample.json';
-import type { Action, Draft, Guideline, Issue, Review, Role, Visual, Identity } from './types';
+import type {
+  Action,
+  Draft,
+  GovernanceInsights,
+  Guideline,
+  Issue,
+  Review,
+  Role,
+  Visual,
+  Identity,
+} from './types';
 import './style.css';
 import { ThemeToggle } from './ThemeToggle';
 import { AuthPage } from './AuthPage';
@@ -94,6 +104,7 @@ function App() {
     [loading, setLoading] = useState(true);
   const [gs, setGs] = useState<Guideline[]>([]),
     [reviews, setReviews] = useState<Review[]>([]),
+    [insights, setInsights] = useState<GovernanceInsights | null>(null),
     [draft, setDraft] = useState<Draft>(sampleDraft),
     [review, setReview] = useState<Review | null>(null),
     [busy, setBusy] = useState(false),
@@ -115,9 +126,10 @@ function App() {
   const tourReturnPage = useRef('workspace');
   const notify = (s: string) => setToast(s);
   const refresh = async () => {
-    const [g, r] = await Promise.all([api.guidelines(), api.reviews()]);
+    const [g, r, i] = await Promise.all([api.guidelines(), api.reviews(), api.insights()]);
     setGs(g);
     setReviews(r);
+    setInsights(i);
   };
   useEffect(() => {
     void (async () => {
@@ -332,13 +344,15 @@ function App() {
         ? 'Approval queue'
         : page === 'history'
           ? 'Review history'
-          : page === 'settings'
-            ? 'Workspace settings'
-            : page === 'manager'
-              ? 'Manager review'
-              : page === 'handoff'
-                ? 'Approval handoff'
-                : 'Review workspace';
+          : page === 'insights'
+            ? 'Governance insights'
+            : page === 'settings'
+              ? 'Workspace settings'
+              : page === 'manager'
+                ? 'Manager review'
+                : page === 'handoff'
+                  ? 'Approval handoff'
+                  : 'Review workspace';
   const activeGs = gs.filter((g) => g.active);
   const avatarText = demoSession
     ? role === 'creator'
@@ -420,6 +434,7 @@ function App() {
             { id: 'guidelines', icon: BookOpen, label: 'Brand guidelines' },
             { id: 'approvals', icon: CheckCheck, label: 'Approvals' },
             { id: 'history', icon: History, label: 'Review history' },
+            { id: 'insights', icon: Sparkles, label: 'Governance insights' },
           ].map((n) => (
             <button
               className={
@@ -565,11 +580,13 @@ function App() {
                       ? 'A final human check before your next great idea goes live.'
                       : page === 'history'
                         ? 'Every review, decision, and revision. All in one place.'
-                        : page === 'manager'
-                          ? 'Review the changes. Understand the context. Make the call.'
-                          : page === 'handoff'
-                            ? 'Share the context behind your creative decisions.'
-                            : 'Your environment, access, and review engine.'}
+                        : page === 'insights'
+                          ? 'Recurring findings and creator feedback across the reviews you can access.'
+                          : page === 'manager'
+                            ? 'Review the changes. Understand the context. Make the call.'
+                            : page === 'handoff'
+                              ? 'Share the context behind your creative decisions.'
+                              : 'Your environment, access, and review engine.'}
               </p>
             </div>
             {page === 'workspace' ? (
@@ -1135,6 +1152,137 @@ function App() {
                 </span>
               </div>
             </>
+          )}
+          {page === 'insights' && (
+            <section className="governance-insights">
+              <div className="insight-metrics">
+                {[
+                  { label: 'Total reviews', value: insights?.totalReviews ?? 0, tone: 'violet' },
+                  { label: 'Approved', value: insights?.approvedCount ?? 0, tone: 'green' },
+                  { label: 'Returned', value: insights?.returnedCount ?? 0, tone: 'amber' },
+                  {
+                    label: 'Average score',
+                    value: `${insights?.averageScore ?? 0}%`,
+                    tone: 'cyan',
+                  },
+                ].map((metric) => (
+                  <article className="panel insight-metric" key={metric.label}>
+                    <span className={`stat-icon ${metric.tone}`}>
+                      <Sparkles size={19} />
+                    </span>
+                    <small>{metric.label}</small>
+                    <strong>{metric.value}</strong>
+                  </article>
+                ))}
+              </div>
+              <div className="insight-columns">
+                <section className="panel insight-section">
+                  <div className="panel-header">
+                    <div>
+                      <span className="panel-icon violet">
+                        <AlertTriangle size={16} />
+                      </span>
+                      <h3>Recurring violations</h3>
+                    </div>
+                    <Badge>{insights?.topViolations.length ?? 0} patterns</Badge>
+                  </div>
+                  {insights?.topViolations.length ? (
+                    <div className="insights-table-wrap">
+                      <table className="insights-table">
+                        <thead>
+                          <tr>
+                            <th>Finding</th>
+                            <th>Guideline</th>
+                            <th>Count</th>
+                            <th>Accepted / rejected / open</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {insights.topViolations.map((violation) => (
+                            <tr
+                              key={`${violation.ruleCitation}:${violation.ruleCategory}:${violation.flaggedText}`}
+                            >
+                              <td>
+                                <strong>{violation.flaggedText}</strong>
+                                <small>{violation.ruleCategory}</small>
+                              </td>
+                              <td>{violation.ruleCitation}</td>
+                              <td>{violation.count}</td>
+                              <td>
+                                {violation.acceptedCount} / {violation.rejectedCount} /{' '}
+                                {violation.openCount}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="empty-state compact">
+                      <p>Recurring findings will appear after reviews are completed.</p>
+                    </div>
+                  )}
+                </section>
+                <section className="panel insight-section">
+                  <div className="panel-header">
+                    <div>
+                      <span className="panel-icon cyan">
+                        <BookOpen size={16} />
+                      </span>
+                      <h3>Guidelines creators push back on</h3>
+                    </div>
+                  </div>
+                  <div className="unclear-guidelines">
+                    {insights?.unclearGuidelines.length ? (
+                      insights.unclearGuidelines.map((guideline) => (
+                        <article
+                          className="unclear-guideline"
+                          key={`${guideline.ruleCitation}:${guideline.ruleCategory}`}
+                        >
+                          <div>
+                            <strong>{guideline.ruleCitation}</strong>
+                            <small>{guideline.ruleCategory}</small>
+                          </div>
+                          <span>{Math.round(guideline.rejectionRate * 100)}% rejected</span>
+                          <small>
+                            {guideline.rejectedCount} of {guideline.totalCount} findings rejected
+                          </small>
+                        </article>
+                      ))
+                    ) : (
+                      <div className="empty-state compact">
+                        <p>No rejected findings yet.</p>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              </div>
+              <section className="panel insight-section channel-insights">
+                <div className="panel-header">
+                  <div>
+                    <span className="panel-icon violet">
+                      <LayoutDashboard size={16} />
+                    </span>
+                    <h3>Channel breakdown</h3>
+                  </div>
+                </div>
+                {insights?.channelBreakdown.length ? (
+                  <div className="channel-cards">
+                    {insights.channelBreakdown.map((channel) => (
+                      <article className="channel-card" key={channel.channel}>
+                        <small>{channel.channel}</small>
+                        <strong>{channel.reviewCount} reviews</strong>
+                        <span>{channel.averageScore}% average score</span>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty-state compact">
+                    <p>Channel averages will appear after reviews are completed.</p>
+                  </div>
+                )}
+              </section>
+            </section>
           )}
           {page === 'guidelines' && (
             <>

@@ -76,6 +76,8 @@ The repository includes a complete local workflow without paid API keys, plus co
 | Alignment score          | Transparent weighted score that updates as rewrites are accepted                         |
 | Manager handoff          | Context notes, revision diff, audit trail, change requests, and sign-off                 |
 | Visual review            | Offline checks of declared colors/logo placement; configurable live image review         |
+| Accessibility            | Deterministic inclusive-language checks and WCAG 2.1 AA normal-text contrast review      |
+| Governance insights      | Authorized review metrics, recurring findings, guideline pushback, and channel averages  |
 | Interface                | OLED dark and warm-paper light themes, saved theme preference, responsive bento layout   |
 | Walkthrough              | Optional five-step tutorial with Back, Next, Skip, Finish, and Escape; never auto-starts |
 | Demonstration            | Explicit sample-data demo and a labeled browser-only fallback                            |
@@ -268,6 +270,8 @@ Store the generated `SESSION_SECRET` and `BRANDGUARD_USERS` in a private environ
 
 Set `AI_MODE=live` and supply a valid server-side API key. Model access depends on the provider account. Switching embedding models rebuilds stored guideline embeddings on startup. Provider failures stop the review; they do not silently issue an offline compliance result.
 
+The local ignored `backend/.env` uses `AI_MODE=live` and a placeholder API key for setup only. Replace it with a rotated key in that file before making live calls; never add a real key to `.env.example` or tracked source. For local deterministic reviews without provider calls, set `AI_MODE=offline`.
+
 Only live mode can inspect attached image content. Offline visual checks validate declared metadata and textual hex codes. Guidelines and drafts sent to the live provider should be handled according to the organization's privacy and retention requirements.
 
 ## Review workflow
@@ -304,6 +308,7 @@ The counts include findings that have not been accepted. Accepted rewrites remov
 | `PATCH` | `/api/v1/guidelines/{id}`      | Activate/deactivate a source                  |
 | `POST`  | `/api/v1/review`               | Create an audit from a draft                  |
 | `GET`   | `/api/v1/reviews`              | List authorized reviews                       |
+| `GET`   | `/api/v1/insights`             | Authorized governance metrics and recurring findings |
 | `GET`   | `/api/v1/reviews/{id}`         | Read an authorized review                     |
 | `POST`  | `/api/v1/reviews/{id}/actions` | Apply decisions, handoff, or manager sign-off |
 
@@ -391,15 +396,28 @@ The repository includes a multi-stage Dockerfile that builds React and serves th
 docker compose -f backend/compose.yaml up --build
 ```
 
-Prepare `backend/.env` first. **Docker/Compose execution has not been verified in the recorded checks.** Before an external deployment, test the image, configure HTTPS and authenticated mode, provide a stable session secret, and provision persistent storage. PostgreSQL is the recommended next database deployment path for broader usage, but its integration has not been exercised in this environment.
+Prepare `backend/.env` first. Compose uses persistent SQLite by default; to use PostgreSQL, set the host `DATABASE_URL` environment variable before invoking Compose so it overrides the container default. **Docker/Compose execution has not been verified in the recorded checks.** Before an external deployment, test the image, configure HTTPS and authenticated mode, provide a stable session secret, and provision persistent storage.
 
 The frontend can also be hosted separately, with an API proxy and authentication/origin configuration adapted accordingly. A static frontend alone provides the browser demonstration, not the complete Python backend.
 
 ### Vercel services
 
-The root [`vercel.json`](vercel.json) defines a `backend` FastAPI service rooted at `backend/` (`main:app`) and a `frontend` Vite service rooted at `frontend/`. Requests under `/api/` are routed to the backend; all other paths are routed to the frontend. The browser uses same-origin `/api/v1/...` requests, so no service binding is needed: the frontend does not call the backend from a function, and its Vite localhost proxy is only for local development. `backend/shared/guidelines.json` is a bundled seed fallback when Vercel builds the backend without sibling frontend files.
+The root [`vercel.json`](vercel.json) defines a `backend` FastAPI service rooted at `backend/` (`main:app`) and a `frontend` Vite service rooted at `frontend/`. The `/api/(.*)` rewrite routes `/api/v1/*` to the backend; the catch-all serves frontend routes and built static assets from Vite. The browser uses same-origin `/api/v1/...` requests, so no service binding is needed: the frontend does not call the backend from a function, and its Vite localhost proxy is only for local development. `backend/shared/guidelines.json` is a bundled seed fallback when Vercel builds the backend without sibling frontend files.
 
-Configure the backend service's Vercel environment with a persistent PostgreSQL `DATABASE_URL` (SQLite on a serverless filesystem is not persistent), `DEMO_MODE=false`, a stable `SESSION_SECRET` of at least 32 characters, and `BRANDGUARD_USERS` containing the bootstrap manager/admin accounts. Set `ALLOWED_ORIGINS` to the exact deployed origin, including `https://`; update it for each production or preview origin that should be allowed. Add `OPENAI_API_KEY` and set `AI_MODE=live` only when live AI is wanted. Keep credentials in Vercel's environment-variable settings, not in source.
+Configure the backend service's Vercel environment with the following production variables:
+
+```text
+DEMO_MODE=false
+ALLOW_REGISTRATION=false
+AI_MODE=live
+OPENAI_API_KEY=<rotated server-side key>
+SESSION_SECRET=<fresh 64-character hex value>
+DATABASE_URL=postgresql+psycopg://<user>:<password>@<host>:<port>/<database>
+ALLOWED_ORIGINS=https://<your-production-origin>
+BRANDGUARD_USERS=<JSON generated by backend/scripts/configure_users.py>
+```
+
+Use the same variable names for Docker deployment. Generate `BRANDGUARD_USERS` and its matching `SESSION_SECRET` with `backend/scripts/configure_users.py`; store both in Vercel's environment settings or the private Docker `backend/.env`, not in source. For PostgreSQL with Compose, set `DATABASE_URL` in the host environment before running Compose; without it, Compose safely uses its persistent SQLite volume. The backend defaults to SQLite when `DATABASE_URL` is unset and uses a configured PostgreSQL URL when supplied. Set `ALLOWED_ORIGINS` to the exact deployed origin, including `https://`; update it for each production or preview origin that should be allowed. A Vercel PostgreSQL database URL must use the SQLAlchemy `postgresql+psycopg://` scheme.
 
 The deployment still requires configuration and a hosted smoke test before it is production-ready; Vercel deployment is not verified by the local test/build checks.
 

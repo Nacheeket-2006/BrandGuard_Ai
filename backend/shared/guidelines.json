@@ -110,10 +110,45 @@
       "#FFFFFF",
       "#0C0D14"
     ],
+    "minContrastRatio": 4.5,
     "logoPositions": [
       "top-left",
       "bottom-right"
     ],
     "rules": []
+  },
+  {
+    "id": "accessibility",
+    "title": "Accessibility & readability",
+    "category": "Accessibility",
+    "citation": "Section 5.1: Accessibility & Readability",
+    "content": "Use inclusive, non-ableist language and clear, descriptive calls to action. Avoid ambiguous link labels such as click here. Normal text color pairs must meet the WCAG 2.1 AA minimum contrast ratio of 4.5:1.",
+    "active": true,
+    "rules": [
+      {
+        "pattern": "\\bblind spot\\b",
+        "replacement": "overlooked gap",
+        "severity": "medium",
+        "explanation": "Use inclusive language that does not rely on disability as a metaphor."
+      },
+      {
+        "pattern": "\\bcrippled\\b",
+        "replacement": "limited",
+        "severity": "medium",
+        "explanation": "Use neutral, inclusive language instead of an ableist expression."
+      },
+      {
+        "pattern": "\\bcrazy\\b",
+        "replacement": "unexpected",
+        "severity": "low",
+        "explanation": "Choose precise, non-stigmatizing language."
+      },
+      {
+        "pattern": "\\bclick here\\b",
+        "replacement": "view the full guide",
+        "severity": "low",
+        "explanation": "Use descriptive link text so people understand the destination."
+      }
+    ]
   }
 ]

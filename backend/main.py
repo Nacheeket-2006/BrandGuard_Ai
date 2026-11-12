@@ -59,11 +59,24 @@ class Record(Base):
 async def lifespan(app):
     Base.metadata.create_all(engine)
     with Session(engine) as db:
+        seed_guidelines = json.loads(GUIDELINES_FILE.read_text(encoding='utf-8'))
         if not db.get(Record, 'settings:initialized'):
-            for g in json.loads(GUIDELINES_FILE.read_text(encoding='utf-8')):
+            for g in seed_guidelines:
                 g = await embed_guideline(g)
                 db.add(Record(id=g['id'], kind='guideline', body=json.dumps(g)))
             db.add(Record(id='settings:initialized', kind='setting', body='{}'))
+            db.commit()
+        else:
+            for g in seed_guidelines:
+                if not db.get(Record, g['id']):
+                    g = await embed_guideline(g)
+                    db.add(Record(id=g['id'], kind='guideline', body=json.dumps(g)))
+            visual_row = db.get(Record, 'visual')
+            if visual_row:
+                visual = json.loads(visual_row.body)
+                if 'minContrastRatio' not in visual:
+                    visual['minContrastRatio'] = 4.5
+                    visual_row.body = json.dumps(visual)
             db.commit()
         for row in db.scalars(select(Record).where(Record.kind == 'guideline')):
             row.body = json.dumps(await embed_guideline(json.loads(row.body)))
@@ -217,6 +230,7 @@ class Guideline(BaseModel):
     rules: list[dict] = Field(default_factory=list, max_length=100)
     colors: list[str] = Field(default_factory=list, max_length=30)
     logoPositions: list[str] = Field(default_factory=list, max_length=10)
+    minContrastRatio: float | None = Field(default=None, ge=1, le=21)
 
 
 def validate_guideline(g):
@@ -339,6 +353,7 @@ def get_review(db, rid, user):
     if not row or row.kind != 'review': raise HTTPException(404, 'Review not found')
     r = json.loads(row.body)
     if user.get('demo') and not r['owner'].startswith('demo-'): raise HTTPException(404, 'Review not found')
+    if not user.get('demo') and r['owner'].startswith('demo-'): raise HTTPException(404, 'Review not found')
     if user['role'] == 'creator' and r['owner'] != user['id']: raise HTTPException(404, 'Review not found')
     return row, r
 
@@ -347,7 +362,67 @@ def get_review(db, rid, user):
 def reviews(user=Depends(actor)):
     with Session(engine) as db:
         result = [json.loads(r.body) for r in db.scalars(select(Record).where(Record.kind == 'review'))]
-    return sorted([r for r in result if (not user.get('demo') or r['owner'].startswith('demo-')) and (user['role'] != 'creator' or r['owner'] == user['id'])], key=lambda r:r['createdAt'], reverse=True)
+    return sorted(authorized_reviews(user, result), key=lambda r:r['createdAt'], reverse=True)
+
+
+def authorized_reviews(user, result):
+    if user.get('demo'):
+        return [r for r in result if r['owner'].startswith('demo-') and (user['role'] != 'creator' or r['owner'] == user['id'])]
+    return [r for r in result if not r['owner'].startswith('demo-') and (user['role'] != 'creator' or r['owner'] == user['id'])]
+
+
+def governance_insights(reviews):
+    violations = {}
+    guidelines_by_citation = {}
+    channels = {}
+    for review in reviews:
+        channel = review.get('channel') or 'Unknown'
+        channel_data = channels.setdefault(channel, {'channel': channel, 'reviewCount': 0, 'scoreTotal': 0})
+        channel_data['reviewCount'] += 1
+        channel_data['scoreTotal'] += review.get('score', 0)
+        for issue in review.get('issues', []):
+            citation = issue.get('ruleCitation', '')
+            category = issue.get('ruleCategory', '')
+            status = issue.get('status', 'open')
+            key = (citation, category, issue.get('flaggedText', ''))
+            violation = violations.setdefault(key, {
+                'ruleCitation': citation, 'ruleCategory': category,
+                'flaggedText': issue.get('flaggedText', ''), 'count': 0,
+                'acceptedCount': 0, 'rejectedCount': 0, 'openCount': 0,
+            })
+            violation['count'] += 1
+            if status in ('accepted', 'rejected', 'open'):
+                violation[status + 'Count'] += 1
+            guideline = guidelines_by_citation.setdefault((citation, category), {
+                'ruleCitation': citation, 'ruleCategory': category, 'totalCount': 0,
+                'acceptedCount': 0, 'rejectedCount': 0,
+            })
+            guideline['totalCount'] += 1
+            if status in ('accepted', 'rejected'):
+                guideline[status + 'Count'] += 1
+    for channel in channels.values():
+        channel['averageScore'] = round(channel.pop('scoreTotal') / channel['reviewCount'], 2)
+    unclear = []
+    for guideline in guidelines_by_citation.values():
+        guideline['rejectionRate'] = guideline['rejectedCount'] / guideline['totalCount']
+        if guideline['rejectedCount']:
+            unclear.append(guideline)
+    return {
+        'totalReviews': len(reviews),
+        'approvedCount': sum(review.get('status') == 'approved' for review in reviews),
+        'returnedCount': sum(review.get('status') == 'returned' for review in reviews),
+        'averageScore': round(sum(review.get('score', 0) for review in reviews) / len(reviews), 2) if reviews else 0,
+        'topViolations': sorted(violations.values(), key=lambda item: (-item['count'], item['ruleCitation'], item['ruleCategory'], item['flaggedText']))[:10],
+        'unclearGuidelines': sorted(unclear, key=lambda item: (-item['rejectionRate'], -item['totalCount'], item['ruleCitation']))[:5],
+        'channelBreakdown': sorted(channels.values(), key=lambda item: item['channel']),
+    }
+
+
+@app.get('/api/v1/insights')
+def insights(user=Depends(actor)):
+    with Session(engine) as db:
+        result = [json.loads(r.body) for r in db.scalars(select(Record).where(Record.kind == 'review'))]
+    return governance_insights(authorized_reviews(user, result))
 
 
 @app.get('/api/v1/reviews/{rid}')

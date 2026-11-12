@@ -23,6 +23,7 @@ export interface Guideline {
   rules: Rule[];
   colors?: string[];
   logoPositions?: string[];
+  minContrastRatio?: number;
 }
 export interface Issue {
   id: string;
@@ -73,5 +74,36 @@ export interface Review extends Draft {
   events: AuditEvent[];
   comment: string;
   policyHash: string;
+}
+export interface GovernanceViolation {
+  ruleCitation: string;
+  ruleCategory: string;
+  flaggedText: string;
+  count: number;
+  acceptedCount: number;
+  rejectedCount: number;
+  openCount: number;
+}
+export interface UnclearGuideline {
+  ruleCitation: string;
+  ruleCategory: string;
+  totalCount: number;
+  acceptedCount: number;
+  rejectedCount: number;
+  rejectionRate: number;
+}
+export interface ChannelInsight {
+  channel: string;
+  reviewCount: number;
+  averageScore: number;
+}
+export interface GovernanceInsights {
+  totalReviews: number;
+  approvedCount: number;
+  returnedCount: number;
+  averageScore: number;
+  topViolations: GovernanceViolation[];
+  unclearGuidelines: UnclearGuideline[];
+  channelBreakdown: ChannelInsight[];
 }
 export type Action = 'accept' | 'reject' | 'reopen' | 'submit' | 'approve' | 'return';

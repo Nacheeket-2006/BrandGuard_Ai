@@ -3,8 +3,10 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
 from backend import main
+from backend.engine import contrast_ratio
 
 
 @pytest.fixture
@@ -111,6 +113,136 @@ def test_visual_metadata_cannot_be_text_accepted(client):
     assert len(r['issues']) == 2
     assert all(i['target'] == 'visual' for i in r['issues'])
     assert action(client, r, 'accept', r['issues'][0]['id']).status_code == 409
+
+
+def test_wcag_contrast_detection(client):
+    low = client.post(
+        '/api/v1/review',
+        json={'text': 'A campaign card.', 'visual': {'colors': ['#8B5CF6', '#22D3EE']}},
+    )
+    assert low.status_code == 201, low.text
+    finding = next(i for i in low.json()['issues'] if i['ruleCategory'] == 'Accessibility')
+    expected = contrast_ratio('#8B5CF6', '#22D3EE')
+    assert expected < 4.5
+    assert finding['target'] == 'visual'
+    assert finding['severity'] == 'medium'
+    assert finding['ruleCitation'] == 'Section 5.1: Accessibility & Readability'
+    assert f'{expected:.2f}:1 < 4.5:1 WCAG AA' in finding['explanation']
+
+    high = client.post(
+        '/api/v1/review',
+        json={'text': 'A campaign card.', 'visual': {'colors': ['#0C0D14', '#FFFFFF']}},
+    )
+    assert high.status_code == 201, high.text
+    assert not any(i['ruleCategory'] == 'Accessibility' for i in high.json()['issues'])
+
+
+def test_accessibility_language_rules(client):
+    response = client.post(
+        '/api/v1/review',
+        json={'text': 'We found a blind spot. Click here.'},
+    )
+    assert response.status_code == 201, response.text
+    matches = {
+        (issue['flaggedText'], issue['suggestedRewrite'])
+        for issue in response.json()['issues']
+        if issue['ruleCategory'] == 'Accessibility'
+    }
+    assert matches == {
+        ('blind spot', 'overlooked gap'),
+        ('Click here', 'view the full guide'),
+    }
+
+
+def test_governance_insights_aggregation_and_isolation(client, monkeypatch):
+    def insert_review(rid, owner, status, score, channel, issues):
+        body = {
+            'id': rid,
+            'owner': owner,
+            'status': status,
+            'score': score,
+            'channel': channel,
+            'issues': issues,
+            'createdAt': 1,
+        }
+        with Session(main.engine) as db:
+            db.add(main.Record(id=rid, kind='review', version=1, body=json.dumps(body)))
+            db.commit()
+
+    def issue(status, flagged='blind spot'):
+        return {
+            'ruleCitation': 'Section 5.1',
+            'ruleCategory': 'Accessibility',
+            'flaggedText': flagged,
+            'status': status,
+        }
+
+    insert_review('demo-approved', 'demo-creator', 'approved', 90, 'Social', [issue('accepted')])
+    insert_review('demo-returned', 'demo-manager', 'returned', 70, 'Email', [issue('rejected')])
+    insert_review('account-creator', 'creator@example.test', 'returned', 60, 'Social', [issue('open')])
+    insert_review('account-manager', 'manager@example.test', 'approved', 100, 'Email', [issue('accepted')])
+
+    creator_insights = client.get('/api/v1/insights').json()
+    assert creator_insights['totalReviews'] == 1
+    assert creator_insights['approvedCount'] == 1
+    assert creator_insights['averageScore'] == 90
+    assert creator_insights['topViolations'][0]['acceptedCount'] == 1
+
+    manager_insights = client.get('/api/v1/insights', headers={'X-Demo-Role': 'manager'}).json()
+    assert manager_insights['totalReviews'] == 2
+    assert manager_insights['approvedCount'] == 1
+    assert manager_insights['returnedCount'] == 1
+    assert manager_insights['averageScore'] == 80
+    assert manager_insights['topViolations'][0]['count'] == 2
+    assert manager_insights['topViolations'][0]['acceptedCount'] == 1
+    assert manager_insights['topViolations'][0]['rejectedCount'] == 1
+    assert manager_insights['unclearGuidelines'][0]['rejectionRate'] == 0.5
+    assert manager_insights['channelBreakdown'] == [
+        {'channel': 'Email', 'reviewCount': 1, 'averageScore': 70.0},
+        {'channel': 'Social', 'reviewCount': 1, 'averageScore': 90.0},
+    ]
+
+    def user_entry(role):
+        salt = 'test-salt-' + role
+        password_hash = main.hashlib.pbkdf2_hmac(
+            'sha256', b'strong-password', salt.encode(), 600000
+        ).hex()
+        return {'role': role, 'passwordHash': salt + ':' + password_hash}
+
+    monkeypatch.setattr(main, 'DEMO', False)
+    monkeypatch.setattr(
+        main,
+        'USERS',
+        {
+            'creator@example.test': user_entry('creator'),
+            'manager@example.test': user_entry('manager'),
+        },
+    )
+    login = client.post(
+        '/api/v1/auth/login',
+        json={'email': 'creator@example.test', 'password': 'strong-password'},
+    )
+    assert login.status_code == 200, login.text
+    token = client.cookies.get('bg_session')
+    authenticated_creator = client.get(
+        '/api/v1/insights', headers={'Cookie': 'bg_session=' + token}
+    ).json()
+    assert authenticated_creator['totalReviews'] == 1
+    assert authenticated_creator['returnedCount'] == 1
+    client.cookies.clear()
+
+    login = client.post(
+        '/api/v1/auth/login',
+        json={'email': 'manager@example.test', 'password': 'strong-password'},
+    )
+    assert login.status_code == 200, login.text
+    token = client.cookies.get('bg_session')
+    authenticated_manager = client.get(
+        '/api/v1/insights', headers={'Cookie': 'bg_session=' + token}
+    ).json()
+    assert authenticated_manager['totalReviews'] == 2
+    assert authenticated_manager['approvedCount'] == 1
+    assert authenticated_manager['returnedCount'] == 1
 
 
 def test_untrusted_origin_invalid_image_and_empty_input(client):

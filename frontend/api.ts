@@ -1,5 +1,5 @@
 import { offline } from './offline';
-import type { Action, Draft, Guideline, Review, Role, Identity } from './types';
+import type { Action, Draft, GovernanceInsights, Guideline, Review, Role, Identity } from './types';
 let browser = false;
 let role: Role = 'creator';
 export function setRole(value: Role) {
@@ -73,6 +73,7 @@ export const api = {
     browser ? Promise.resolve({ ok: true }) : request('/auth/logout', { method: 'POST' }),
   guidelines: () => (browser ? offline.guidelines() : request<Guideline[]>('/guidelines')),
   reviews: () => (browser ? offline.reviews() : request<Review[]>('/reviews')),
+  insights: () => (browser ? offline.insights() : request<GovernanceInsights>('/insights')),
   review: (d: Draft) =>
     browser
       ? offline.review(d)
