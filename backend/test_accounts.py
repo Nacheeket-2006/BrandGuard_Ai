@@ -36,6 +36,7 @@ def test_registration_persists_hash_and_signs_in(client):
     with Session(main.engine) as db:
         row = db.scalars(select(main.Record).where(main.Record.kind == 'user')).one()
         entry = json.loads(row.body)
+        assert len(row.id) <= main.Record.__table__.c.id.type.length
         assert 'long test passphrase' not in row.body
         assert len(entry['passwordHash'].split(':')[1]) == 64
     assert client.post('/api/v1/auth/logout').status_code == 200

@@ -145,7 +145,8 @@ def account(email):
     entry = next((v for k,v in USERS.items() if k.casefold() == normalized), None)
     if entry: return entry
     with Session(engine) as db:
-        row = db.get(Record, 'user:' + hashlib.sha256(normalized.encode()).hexdigest())
+        digest = hashlib.sha256(normalized.encode()).hexdigest()
+        row = db.get(Record, digest) or db.get(Record, 'user:' + digest)
         return json.loads(row.body) if row and row.kind == 'user' else None
 
 
@@ -187,7 +188,7 @@ def register(body: Registration, response: Response):
     salt = secrets.token_hex(16)
     entry = {'name': name, 'email': email, 'role': 'creator', 'passwordHash': salt + ':' + hashlib.pbkdf2_hmac('sha256', body.password.encode(), salt.encode(), 600000).hex(), 'createdAt': time.time()}
     with Session(engine) as db:
-        db.add(Record(id='user:' + hashlib.sha256(email.encode()).hexdigest(), kind='user', body=json.dumps(entry)))
+        db.add(Record(id=hashlib.sha256(email.encode()).hexdigest(), kind='user', body=json.dumps(entry)))
         try: db.commit()
         except IntegrityError:
             db.rollback()
